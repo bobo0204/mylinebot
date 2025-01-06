@@ -11,12 +11,30 @@ from linebot.models import (
 from datetime import datetime
 import random
 from typing import Tuple, Dict
+import requests
+from bs4 import BeautifulSoup
 
 line_bot_api = LineBotApi(settings.LINE_CHANNEL_ACCESS_TOKEN)
 parser = WebhookParser(settings.LINE_CHANNEL_SECRET)
 
 # 用於存儲用戶當前題目和答案的字典
 user_sessions: Dict[str, Dict] = {}
+
+def read(word):
+    """查詢中文字的拼音"""
+    url = f'https://dict.revised.moe.edu.tw/search.jsp?md=1&word={word}#searchL'
+    try:
+        html = requests.get(url)
+        bs = BeautifulSoup(html.text, 'lxml')
+        data = bs.find('table', id='searchL')
+        row = data.find_all('tr')[2]
+        chinese = row.find('cr').text
+        phones = row.find_all('code')
+        phone = [e.text for e in phones]
+        s = " ".join(phone)
+        return f"{chinese}=>{s}"
+    except:
+        return '查無此字'
 
 def generate_question() -> Tuple[str, int]:
     """生成一個隨機算術題目和其答案"""
@@ -77,8 +95,25 @@ def callback(request):
                 user_id = event.source.user_id
                 user_message = event.message.text.strip()
                 
+                # 檢查是否是查詢拼音的指令
+                if user_message.startswith('查拼音'):
+                    # 提取要查詢的中文字
+                    word = user_message[3:].strip()
+                    if word:
+                        result = read(word)
+                        line_bot_api.reply_message(
+                            event.reply_token,
+                            TextSendMessage(text=result)
+                        )
+                    else:
+                        line_bot_api.reply_message(
+                            event.reply_token,
+                            TextSendMessage(text="請在「查拼音」後面輸入要查詢的中文字")
+                        )
+                    return HttpResponse()
+                
                 # 檢查是否是算術練習相關的指令
-                if user_message.lower() in ['開始', '練習', 'start', 'y', '是']:
+                elif user_message.lower() in ['開始', '練習', 'start', 'y', '是']:
                     # 生成新題目
                     expression, answer = generate_question()
                     user_sessions[user_id] = {
@@ -94,7 +129,7 @@ def callback(request):
                     return HttpResponse()
 
                 # 檢查是否要結束練習
-                if user_message.lower() in ['結束', 'end', 'n', '否']:
+                elif user_message.lower() in ['結束', 'end', 'n', '否']:
                     if user_id in user_sessions:
                         del user_sessions[user_id]
                     line_bot_api.reply_message(
@@ -104,7 +139,7 @@ def callback(request):
                     return HttpResponse()
 
                 # 檢查答案
-                if user_id in user_sessions:
+                elif user_id in user_sessions:
                     correct_answer = user_sessions[user_id]['answer']
                     response = check_answer(user_message, correct_answer)
                     
@@ -129,16 +164,17 @@ def callback(request):
                         del user_sessions[user_id]
                     return HttpResponse()
 
-                # 如果不是算術練習相關的訊息，則使用原本的回覆邏輯
-                currentDateAndTime = datetime.now()
-                currentTime = currentDateAndTime.strftime("%H:%M:%S")
-                txtmsg = "您所傳的訊息是:\n"
-                txtmsg += currentTime + "\n"
-                txtmsg += event.message.text
-                line_bot_api.reply_message(
-                    event.reply_token,
-                    TextSendMessage(text=txtmsg)
-                )
+                # 如果不是特殊指令，則使用原本的回覆邏輯
+                else:
+                    currentDateAndTime = datetime.now()
+                    currentTime = currentDateAndTime.strftime("%H:%M:%S")
+                    txtmsg = "您所傳的訊息是:\n"
+                    txtmsg += currentTime + "\n"
+                    txtmsg += event.message.text
+                    line_bot_api.reply_message(
+                        event.reply_token,
+                        TextSendMessage(text=txtmsg)
+                    )
 
         return HttpResponse()
     else:
