@@ -20,22 +20,6 @@ parser = WebhookParser(settings.LINE_CHANNEL_SECRET)
 # 用於存儲用戶當前題目和答案的字典
 user_sessions: Dict[str, Dict] = {}
 
-def read(word):
-    """查詢中文字的拼音"""
-    url = f'https://dict.revised.moe.edu.tw/search.jsp?md=1&word={word}#searchL'
-    try:
-        html = requests.get(url)
-        bs = BeautifulSoup(html.text, 'lxml')
-        data = bs.find('table', id='searchL')
-        row = data.find_all('tr')[2]
-        chinese = row.find('cr').text
-        phones = row.find_all('code')
-        phone = [e.text for e in phones]
-        s = " ".join(phone)
-        return f"{chinese}=>{s}"
-    except:
-        return '查無此字'
-
 def generate_question() -> Tuple[str, int]:
     """生成一個隨機算術題目和其答案"""
     attempts = 0
@@ -75,6 +59,45 @@ def check_answer(user_answer: str, correct_answer: int) -> str:
     else:
         return f"錯誤，加油，再想想 ~\n正確答案是: {correct_answer}\n要繼續練習嗎？"
 
+def read(word):
+    """查詢中文字的注音"""
+    try:
+        url = f'https://dict.revised.moe.edu.tw/search.jsp?md=1&word={word}#searchL'
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }
+        response = requests.get(url, headers=headers, timeout=10)
+        response.encoding = 'utf-8'
+        
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # 找到包含注音的單元格
+        phonetic_td = soup.find('td', class_='ph')
+        
+        if phonetic_td:
+            # 獲取所有注音碼和聲調
+            result = []
+            for ib in phonetic_td.find_all('ib'):
+                phonetic = ''
+                code = ib.find('code')
+                if code:
+                    phonetic = code.text.strip()
+                sup = ib.find('sup')
+                if sup:
+                    phonetic += sup.text.strip()
+                if phonetic:
+                    result.append(phonetic)
+            
+            if result:
+                phonetic_str = " ".join(result)
+                return f"{word}=>{phonetic_str}"
+        
+        return '查無此字'
+        
+    except Exception as e:
+        print(f"Error: {str(e)}")
+        return f'發生錯誤: {str(e)}'
+
 def index(request):
     return HttpResponse("Hello Line Bot works~!")
 
@@ -95,8 +118,8 @@ def callback(request):
                 user_id = event.source.user_id
                 user_message = event.message.text.strip()
                 
-                # 檢查是否是查詢拼音的指令
-                if user_message.startswith('查拼音'):
+                # 檢查是否是查詢注音的指令
+                if user_message.startswith('查注音'):
                     # 提取要查詢的中文字
                     word = user_message[3:].strip()
                     if word:
@@ -108,7 +131,7 @@ def callback(request):
                     else:
                         line_bot_api.reply_message(
                             event.reply_token,
-                            TextSendMessage(text="請在「查拼音」後面輸入要查詢的中文字")
+                            TextSendMessage(text="請在「查注音」後面輸入要查詢的中文字")
                         )
                     return HttpResponse()
                 
