@@ -5,6 +5,9 @@ from django.views.decorators.csrf import csrf_exempt
 from linebot import LineBotApi, WebhookParser
 from linebot.exceptions import InvalidSignatureError, LineBotApiError
 from linebot.models import MessageEvent, TextSendMessage
+
+from datetime import datetime
+
 line_bot_api = LineBotApi(settings.LINE_CHANNEL_ACCESS_TOKEN)
 parser = WebhookParser(settings.LINE_CHANNEL_SECRET)
 def index(request):
@@ -20,10 +23,20 @@ def callback(request):
             return HttpResponseForbidden()
         except LineBotApiError:
             return HttpResponseBadRequest()
+
         for event in events:
             # 若有訊息事件
             if isinstance(event, MessageEvent):
+
+                currentDateAndTime = datetime.now()
+                currentTime = currentDateAndTime.strftime("%H:%M:%S")
+
+                txtmsg = "您所傳的訊息是:\n"
+                txtmsg += currentTime + "\n"
+                txtmsg += event.message.text
+
                 # 回傳收到的文字訊息
+
                 line_bot_api.reply_message(
                     event.reply_token,
                     TextSendMessage(text=event.message.text))
